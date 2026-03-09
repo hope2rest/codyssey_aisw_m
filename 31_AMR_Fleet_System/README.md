@@ -283,6 +283,14 @@ pytest tests/ -v
 
 ---
 
+## 시뮬레이션 예시 샘플 영상
+
+ROS2 + Gazebo 기반 AMR 물류 시스템의 실제 시뮬레이션 환경 참고 영상:
+
+- [Multi-Robot Warehouse Simulation Demo](https://www.youtube.com/watch?v=kLGu3jM83o0)
+
+---
+
 ## 환경 요구사항
 
 - Python 3.10+
