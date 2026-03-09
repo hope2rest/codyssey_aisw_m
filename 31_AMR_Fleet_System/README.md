@@ -90,8 +90,8 @@ pytest tests/ -v
 # 외부 의존성 없이 순수 Python으로 실행
 python dashboard/app.py
 
-# 브라우저에서 http://localhost:8080 접속
-# 5대 로봇 실시간 시뮬레이션, KPI, 작업 큐 모니터링
+# 브라우저에서 http://localhost:8888 접속
+# 5대 로봇 실시간 시뮬레이션, KPI, 작업 큐, 이상 알림 모니터링
 ```
 
 ### Docker 환경 (전체 시스템)
@@ -157,9 +157,9 @@ ros2 launch amr_fleet_system fleet.launch.py num_robots:=5
 │   ├── fleet_manager_node.py            #   Fleet 관리 노드 (할당 + 교착 탐지)
 │   └── safety_node.py                   #   안전 노드 (E-Stop + Safety Zone)
 │
-├── dashboard/                           # ★ 웹 모니터링 대시보드
+├── dashboard/                           # ★ 웹 모니터링 대시보드 (한국어 UI)
 │   └── app.py                           #   순수 Python HTTP 서버 (외부 의존성 없음)
-│                                        #   실시간 5대 로봇 시각화, KPI, 작업 큐
+│                                        #   로봇 상태 카드, KPI 6종, 이상 알림, 작업 큐
 │
 ├── robot_description/                   # 로봇 모델
 │   └── amr_robot.urdf.xacro            #   차동 구동 AMR URDF (xacro 매크로)
@@ -234,9 +234,13 @@ ros2 launch amr_fleet_system fleet.launch.py num_robots:=5
 
 ### 웹 모니터링 대시보드
 
-- 순수 Python HTTP 서버 (외부 라이브러리 불필요)
-- 다크 테마 UI: 창고 맵 Canvas, KPI 카드, 작업 차트, 작업 큐 테이블
-- 2초 간격 자동 갱신, 5대 로봇 실시간 시뮬레이션
+- 순수 Python HTTP 서버 (외부 라이브러리 불필요), 한국어 UI
+- 로봇별 상태 카드 (상태, 속도, 배터리 바, 현재 작업)
+- KPI 6종: 시간당 처리량, 로봇 가동률, 평균 작업 시간, 교착 상태, 완료/대기 작업
+- 이상 알림 패널: 배터리 부족/위험, 도킹 상태 실시간 경고
+- 창고 맵: 로봇 위치 + 이동 궤적 + 목표 점선 표시
+- 작업 큐 테이블, 처리 추이 차트 (탭 전환)
+- 0.75초 간격 자동 갱신, 50건 완료 시 자동 리셋 사이클
 
 ### ROS2 노드
 
