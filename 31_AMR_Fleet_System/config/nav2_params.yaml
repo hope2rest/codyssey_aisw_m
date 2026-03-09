@@ -1,0 +1,152 @@
+# =============================================================================
+# Nav2 네비게이션 파라미터
+# =============================================================================
+
+# ------------------------------------------------------------------
+# Costmap 공통 파라미터
+# ------------------------------------------------------------------
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 6.0              # m
+      height: 6.0             # m
+      resolution: 0.05        # m/cell
+
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /amr/scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.1
+          obstacle_max_range: 5.0
+          obstacle_min_range: 0.1
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0     # 비용 감쇠 속도
+        inflation_radius: 0.55       # m (로봇 반경 + 안전 마진)
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 0.5
+      global_frame: map
+      robot_base_frame: base_link
+      rolling_window: false
+      resolution: 0.1          # m/cell
+
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /amr/scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+# ------------------------------------------------------------------
+# DWA (Dynamic Window Approach) Local Planner
+# ------------------------------------------------------------------
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: true
+      # 속도 제한
+      min_vel_x: 0.0
+      max_vel_x: 1.0            # m/s
+      min_vel_y: 0.0
+      max_vel_y: 0.0            # 차동 구동이므로 0
+      max_vel_theta: 1.5        # rad/s
+      min_speed_xy: 0.0
+      max_speed_xy: 1.0
+      min_speed_theta: 0.0
+      # 가속도 제한
+      acc_lim_x: 0.5            # m/s^2
+      acc_lim_y: 0.0
+      acc_lim_theta: 2.0        # rad/s^2
+      decel_lim_x: -0.5
+      decel_lim_y: 0.0
+      decel_lim_theta: -2.0
+      # 시뮬레이션 파라미터
+      sim_time: 1.7             # 초 (궤적 시뮬레이션 시간)
+      vx_samples: 20            # 선속도 샘플 수
+      vy_samples: 1
+      vtheta_samples: 20        # 각속도 샘플 수
+      # 평가 함수 가중치
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 32.0
+      PathDist.scale: 32.0
+      GoalAlign.scale: 24.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+
+# ------------------------------------------------------------------
+# A* Global Planner
+# ------------------------------------------------------------------
+planner_server:
+  ros__parameters:
+    planner_plugins: ["GridBased"]
+
+    GridBased:
+      plugin: "nav2_smac_planner/SmacPlanner2D"
+      tolerance: 0.25           # m (목표 허용 오차)
+      use_astar: true           # A* 사용
+      allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 2.0    # 초
+      # A* 설정
+      allow_diagonal: true      # 대각선 이동 허용
+      weight: 1.2               # 휴리스틱 가중치 (>1.0: 속도 우선, 1.0: 최적성 보장)
+      smooth_path: true
+      cost_travel_multiplier: 2.0
+
+# ------------------------------------------------------------------
+# Recovery 행동
+# ------------------------------------------------------------------
+behavior_server:
+  ros__parameters:
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "wait"]
+
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    wait:
+      plugin: "nav2_behaviors/Wait"

@@ -1,0 +1,48 @@
+# =============================================================================
+# AMR 로봇 물리 파라미터
+# =============================================================================
+
+robot:
+  # 기본 치수
+  body_length: 0.6       # m
+  body_width: 0.4        # m
+  body_height: 0.3       # m
+
+  # 바퀴 파라미터
+  wheel_radius: 0.05     # m
+  wheel_base: 0.3        # m (좌우 바퀴 간 거리)
+  wheel_width: 0.03      # m
+  ticks_per_rev: 4096    # 인코더 틱/회전
+
+  # 속도/가속도 제한
+  max_velocity: 1.0          # m/s
+  max_acceleration: 0.5      # m/s^2
+  max_angular_velocity: 1.5  # rad/s
+  max_angular_acceleration: 2.0  # rad/s^2
+
+  # 질량 파라미터 (적재 용량별)
+  mass:
+    empty: 20.0            # kg (빈 상태)
+    light_load: 30.0       # kg (경량 적재)
+    medium_load: 50.0      # kg (중량 적재)
+    full_load: 70.0        # kg (최대 적재)
+    max_payload: 50.0      # kg (최대 적재 하중)
+
+  # 적재에 따른 동역학 변화
+  load_dynamics:
+    # 질량 증가 시 최대 속도 감소 비율 (payload_kg 당)
+    velocity_reduction_per_kg: 0.005   # m/s per kg
+    # 질량 증가 시 최대 가속도 감소 비율
+    acceleration_reduction_per_kg: 0.003  # m/s^2 per kg
+    # 바퀴 슬립 증가 비율
+    slip_increase_per_kg: 0.0002
+
+  # 배터리
+  battery:
+    capacity: 100.0        # % (만충 기준)
+    drain_rate_idle: 0.01  # %/s (대기 시)
+    drain_rate_moving: 0.05  # %/s (이동 시)
+    drain_rate_loaded: 0.08  # %/s (적재 이동 시)
+    charge_rate: 0.2       # %/s (충전 시)
+    low_threshold: 20.0    # % (충전 필요 임계값)
+    critical_threshold: 10.0  # % (긴급 충전 임계값)

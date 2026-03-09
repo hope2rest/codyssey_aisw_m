@@ -1,0 +1,107 @@
+# =============================================================================
+# Fleet 관리 설정
+# =============================================================================
+
+fleet:
+  # ------------------------------------------------------------------
+  # 로봇 구성 (5대)
+  # ------------------------------------------------------------------
+  num_robots: 5
+  robots:
+    - id: amr_01
+      namespace: /amr_01
+      initial_pose: {x: 2.0, y: 2.0, theta: 0.0}
+      role: picker          # 피킹 전담
+    - id: amr_02
+      namespace: /amr_02
+      initial_pose: {x: 4.0, y: 2.0, theta: 0.0}
+      role: picker
+    - id: amr_03
+      namespace: /amr_03
+      initial_pose: {x: 6.0, y: 2.0, theta: 0.0}
+      role: picker
+    - id: amr_04
+      namespace: /amr_04
+      initial_pose: {x: 8.0, y: 2.0, theta: 0.0}
+      role: transporter     # 운반 전담
+    - id: amr_05
+      namespace: /amr_05
+      initial_pose: {x: 10.0, y: 2.0, theta: 0.0}
+      role: transporter
+
+  # ------------------------------------------------------------------
+  # 충전 스테이션
+  # ------------------------------------------------------------------
+  charging_stations:
+    - id: station_01
+      position: {x: 2.0, y: 2.0}
+      capacity: 1           # 동시 충전 가능 대수
+    - id: station_02
+      position: {x: 4.0, y: 2.0}
+      capacity: 1
+    - id: station_03
+      position: {x: 6.0, y: 2.0}
+      capacity: 1
+    - id: station_04
+      position: {x: 8.0, y: 2.0}
+      capacity: 1
+    - id: station_05
+      position: {x: 10.0, y: 2.0}
+      capacity: 1
+
+  # ------------------------------------------------------------------
+  # 작업 할당 알고리즘 설정
+  # ------------------------------------------------------------------
+  task_allocation:
+    algorithm: hungarian     # hungarian | greedy | auction
+    cost_metric: distance    # distance | time | battery_aware
+    rebalance_interval: 30.0 # 초 (재할당 주기)
+    max_tasks_per_robot: 5   # 최대 대기열 크기
+
+    # Hungarian 알고리즘 파라미터
+    hungarian:
+      cost_weight_distance: 0.6
+      cost_weight_battery: 0.2
+      cost_weight_load: 0.2
+
+    # Greedy 알고리즘 파라미터
+    greedy:
+      nearest_first: true
+
+    # Auction 알고리즘 파라미터
+    auction:
+      bid_timeout: 2.0       # 초
+      min_bid_increment: 0.1
+
+  # ------------------------------------------------------------------
+  # 교통 관리
+  # ------------------------------------------------------------------
+  traffic:
+    # 교착 탐지
+    deadlock:
+      detection_timeout: 30.0  # 초 (이동 없이 대기 시 교착 판정)
+      check_interval: 5.0     # 초 (교착 검사 주기)
+      max_wait_time: 60.0     # 초 (최대 대기 시간, 초과 시 강제 재경로)
+
+    # 충돌 방지
+    collision_avoidance:
+      safety_distance: 1.0    # m (로봇 간 최소 안전 거리)
+      priority_rule: first_come  # first_come | higher_priority | nearest_goal
+
+    # 구역 제한
+    zone_control:
+      max_robots_per_aisle: 2  # 통로당 최대 로봇 수
+      one_way_aisles: false    # 일방통행 통로 적용 여부
+
+  # ------------------------------------------------------------------
+  # 모니터링
+  # ------------------------------------------------------------------
+  monitoring:
+    update_rate: 2.0          # Hz
+    log_level: info           # debug | info | warn | error
+    metrics:
+      - throughput             # 시간당 처리 작업 수
+      - average_task_time      # 평균 작업 소요 시간
+      - robot_utilization      # 로봇 가동률
+      - battery_status         # 배터리 상태
+      - deadlock_count         # 교착 발생 횟수
