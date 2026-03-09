@@ -285,9 +285,12 @@ pytest tests/ -v
 
 ## 시뮬레이션 예시 샘플 영상
 
-ROS2 + Gazebo 기반 AMR 물류 시스템의 실제 시뮬레이션 환경 참고 영상:
+> 320시간 학습 과정을 완료하면 아래와 같은 ROS2 + Gazebo 기반 다중 AMR 물류 시뮬레이션 환경을 직접 구축하고 확인할 수 있습니다.
+> 다수의 AMR이 창고 환경에서 자율 주행, SLAM 지도 생성, 경로 계획, 장애물 회피, 작업 할당 등을 수행하는 모습을 실시간으로 확인할 수 있습니다.
 
-- [Multi-Robot Warehouse Simulation Demo](https://www.youtube.com/watch?v=kLGu3jM83o0)
+[![ROS2 AMR 물류 시뮬레이션 예시](https://img.youtube.com/vi/kLGu3jM83o0/maxresdefault.jpg)](https://www.youtube.com/watch?v=kLGu3jM83o0)
+
+▶ **클릭하여 시뮬레이션 예시 영상 보기**
 
 ---
 
