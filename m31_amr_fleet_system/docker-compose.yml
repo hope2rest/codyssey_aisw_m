@@ -1,0 +1,90 @@
+# =============================================================================
+# AMR Fleet System Docker Compose
+# =============================================================================
+version: "3.8"
+
+services:
+  amr_fleet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: amr_fleet_system
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=42
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      # 소스 코드 마운트 (개발 편의)
+      - .:/ros2_ws/src/amr_fleet_system
+      # X11 소켓 (GUI 표시)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # 로그 저장
+      - ./logs:/ros2_ws/logs
+    network_mode: host
+    stdin_open: true
+    tty: true
+    # GPU 가속 (NVIDIA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      bash -c "
+        source /opt/ros/humble/setup.bash &&
+        source /ros2_ws/install/setup.bash &&
+        echo 'AMR Fleet System 준비 완료' &&
+        bash
+      "
+
+  # Gazebo 시뮬레이션 서비스
+  simulation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: amr_simulation
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=42
+      - GAZEBO_MODEL_PATH=/ros2_ws/src/amr_fleet_system/robot_description
+    volumes:
+      - .:/ros2_ws/src/amr_fleet_system
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      bash -c "
+        source /opt/ros/humble/setup.bash &&
+        source /ros2_ws/install/setup.bash &&
+        ros2 launch amr_fleet_system simulation.launch.py
+      "
+
+  # 네비게이션 서비스
+  navigation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: amr_navigation
+    environment:
+      - ROS_DOMAIN_ID=42
+    volumes:
+      - .:/ros2_ws/src/amr_fleet_system
+    network_mode: host
+    depends_on:
+      - simulation
+    command: >
+      bash -c "
+        source /opt/ros/humble/setup.bash &&
+        source /ros2_ws/install/setup.bash &&
+        ros2 launch amr_fleet_system navigation.launch.py
+      "
