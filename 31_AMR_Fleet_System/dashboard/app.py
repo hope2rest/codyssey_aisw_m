@@ -84,8 +84,35 @@ class FleetSimulator:
             'created_at': time.time(),
         })
 
+    def _reset_cycle(self):
+        """50건 이상 완료 시 새 사이클 시작."""
+        self.tasks = [t for t in self.tasks if t['status'] == 'in_progress']
+        self.completed_tasks = 0
+        self.start_time = time.time()
+
+        robot_starts = [
+            (10, 20), (20, 15), (30, 25), (40, 10), (50, 20)]
+        for i, (rid, robot) in enumerate(self.robots.items()):
+            if robot['state'] == 'idle':
+                robot['position'] = list(robot_starts[i]) + [0.0]
+                robot['trail'] = [list(robot_starts[i])]
+                robot['battery'] = random.uniform(70, 100)
+
+        for _ in range(8):
+            self._generate_task()
+
     def update(self):
         """1 프레임 업데이트."""
+        # 50건 이상 완료 시 새 사이클
+        if self.completed_tasks >= 50:
+            self._reset_cycle()
+
+        # 대기 작업이 없으면 자동 생성
+        pending = sum(1 for t in self.tasks if t['status'] == 'pending')
+        if pending == 0:
+            for _ in range(random.randint(2, 4)):
+                self._generate_task()
+
         for rid, robot in self.robots.items():
             if robot['state'] == 'idle':
                 # 대기 중인 작업 할당
@@ -135,8 +162,7 @@ class FleetSimulator:
                 self.completed_tasks += 1
 
                 # 새 작업 생성
-                if random.random() < 0.6:
-                    self._generate_task()
+                self._generate_task()
 
     def get_robots(self):
         return list(self.robots.values())
@@ -147,6 +173,16 @@ class FleetSimulator:
         active = sum(
             1 for r in self.robots.values() if r['state'] != 'idle')
         utilization = active / len(self.robots) * 100
+
+        # 평균 작업 시간 계산
+        completed = [t for t in self.tasks if t['status'] == 'completed']
+        if completed:
+            avg_time = elapsed / len(completed)
+            avg_min = int(avg_time // 60)
+            avg_sec = int(avg_time % 60)
+            avg_task_time = f'{avg_min}분 {avg_sec}초'
+        else:
+            avg_task_time = '--'
 
         return {
             'tasks_per_hour': round(
@@ -159,7 +195,26 @@ class FleetSimulator:
             'pending_tasks': sum(
                 1 for t in self.tasks if t['status'] == 'pending'),
             'elapsed_minutes': round(elapsed / 60, 1),
+            'avg_task_time': avg_task_time,
         }
+
+    def get_alerts(self):
+        """이상 상황 알림 목록."""
+        alerts = []
+        for rid, robot in self.robots.items():
+            if robot['battery'] < 20:
+                alerts.append({
+                    'type': 'warning',
+                    'message': f'{rid} 배터리 부족 ({robot["battery"]:.0f}%)',
+                    'time': time.time(),
+                })
+            if robot['battery'] < 10:
+                alerts.append({
+                    'type': 'critical',
+                    'message': f'{rid} 배터리 위험 - 충전 필요',
+                    'time': time.time(),
+                })
+        return alerts[-10:]
 
     def get_tasks(self):
         # 최근 20개
@@ -203,26 +258,57 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AMR Fleet Dashboard</title>
+<title>AMR Fleet 모니터링 대시보드</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { background:#1a1a2e; color:#e0e0e0; font-family:'Segoe UI',sans-serif; }
-.header { background:#16213e; padding:12px 24px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f3460; }
-.header h1 { font-size:20px; color:#4cc9f0; }
-.header .status { font-size:13px; color:#8d99ae; }
-.grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:12px; padding:12px; height:calc(100vh - 56px); }
-.panel { background:#16213e; border-radius:8px; padding:16px; border:1px solid #0f3460; overflow:hidden; display:flex; flex-direction:column; }
-.panel h2 { font-size:14px; color:#4cc9f0; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px; }
+body { background:#1a1a2e; color:#e0e0e0; font-family:'Segoe UI','Malgun Gothic',sans-serif; }
+.header { background:#16213e; padding:10px 24px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f3460; }
+.header h1 { font-size:18px; color:#4cc9f0; }
+.header .status { font-size:12px; color:#8d99ae; }
+.main { display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:auto 1fr 1fr; gap:10px; padding:10px; height:calc(100vh - 50px); }
+.panel { background:#16213e; border-radius:8px; padding:12px; border:1px solid #0f3460; overflow:hidden; display:flex; flex-direction:column; }
+.panel h2 { font-size:12px; color:#4cc9f0; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
 canvas { width:100%; flex:1; border-radius:4px; background:#0a0a1a; }
-.kpi-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; flex:1; }
-.kpi-card { background:#0f3460; border-radius:8px; padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
-.kpi-card .value { font-size:32px; font-weight:bold; color:#4cc9f0; }
-.kpi-card .label { font-size:12px; color:#8d99ae; margin-top:4px; }
+
+/* 로봇 상태 패널 - 상단 전체 */
+.robot-status { grid-column: 1 / -1; }
+.robot-cards { display:flex; gap:8px; flex:1; }
+.robot-card { flex:1; background:#0f3460; border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:4px; position:relative; }
+.robot-card .name { font-size:13px; font-weight:bold; }
+.robot-card .state { font-size:11px; padding:2px 6px; border-radius:8px; display:inline-block; width:fit-content; }
+.robot-card .state.idle { background:#3d3d5c; color:#8d99ae; }
+.robot-card .state.navigating { background:#1a5276; color:#5dade2; }
+.robot-card .state.docking { background:#7b5e00; color:#ffd166; }
+.robot-card .info { font-size:11px; color:#8d99ae; }
+.robot-card .battery-bar { height:4px; background:#2d2d4e; border-radius:2px; margin-top:2px; }
+.robot-card .battery-fill { height:100%; border-radius:2px; transition:width 0.3s; }
+
+/* 창고 맵 */
+.map-panel { grid-column: 1 / 3; grid-row: 2 / 4; }
+
+/* KPI */
+.kpi-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; flex:1; }
+.kpi-card { background:#0f3460; border-radius:8px; padding:12px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
+.kpi-card .value { font-size:28px; font-weight:bold; color:#4cc9f0; }
+.kpi-card .label { font-size:11px; color:#8d99ae; margin-top:2px; }
 .kpi-card.alert .value { color:#ff6b6b; }
-table { width:100%; border-collapse:collapse; font-size:12px; }
-th { background:#0f3460; padding:8px; text-align:left; color:#4cc9f0; position:sticky; top:0; }
-td { padding:6px 8px; border-bottom:1px solid #1a1a3e; }
-.badge { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold; }
+
+/* 알림 */
+.alert-list { flex:1; overflow-y:auto; }
+.alert-item { padding:6px 8px; margin-bottom:4px; border-radius:6px; font-size:11px; display:flex; align-items:center; gap:6px; }
+.alert-item.warning { background:#7b5e00; color:#ffd166; }
+.alert-item.critical { background:#6a040f; color:#ff758f; }
+.alert-item.info { background:#1a5276; color:#5dade2; }
+.alert-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.alert-item.warning .alert-dot { background:#ffd166; }
+.alert-item.critical .alert-dot { background:#ff758f; }
+.alert-item.info .alert-dot { background:#5dade2; }
+
+/* 작업 테이블 */
+table { width:100%; border-collapse:collapse; font-size:11px; }
+th { background:#0f3460; padding:6px; text-align:left; color:#4cc9f0; position:sticky; top:0; }
+td { padding:5px 6px; border-bottom:1px solid #1a1a3e; }
+.badge { padding:2px 6px; border-radius:8px; font-size:10px; font-weight:bold; }
 .badge.completed { background:#2d6a4f; color:#95d5b2; }
 .badge.in_progress { background:#7b5e00; color:#ffd166; }
 .badge.pending { background:#3d3d5c; color:#8d99ae; }
@@ -235,51 +321,128 @@ td { padding:6px 8px; border-bottom:1px solid #1a1a3e; }
 </head>
 <body>
 <div class="header">
-  <h1>AMR Fleet Monitoring Dashboard</h1>
+  <h1>AMR Fleet 모니터링 대시보드</h1>
   <div class="status" id="clock">--</div>
 </div>
-<div class="grid">
-  <div class="panel">
-    <h2>Warehouse Map</h2>
+<div class="main">
+  <!-- 상단: 로봇 상태 카드 5개 -->
+  <div class="panel robot-status">
+    <h2>로봇 상태</h2>
+    <div class="robot-cards" id="robotCards"></div>
+  </div>
+
+  <!-- 좌측: 창고 맵 (2x2 크기) -->
+  <div class="panel map-panel">
+    <h2>창고 맵 (60m x 40m)</h2>
     <canvas id="mapCanvas"></canvas>
   </div>
+
+  <!-- 우측 상단: KPI -->
   <div class="panel">
-    <h2>KPI</h2>
+    <h2>핵심 성과 지표 (KPI)</h2>
     <div class="kpi-grid">
-      <div class="kpi-card"><div class="value" id="kpi-tph">--</div><div class="label">Tasks / Hour</div></div>
-      <div class="kpi-card"><div class="value" id="kpi-util">--</div><div class="label">Utilization %</div></div>
-      <div class="kpi-card"><div class="value" id="kpi-active">--</div><div class="label">Active Robots</div></div>
-      <div class="kpi-card" id="kpi-dl-card"><div class="value" id="kpi-dl">--</div><div class="label">Deadlocks</div></div>
+      <div class="kpi-card"><div class="value" id="kpi-tph">--</div><div class="label">시간당 처리량</div></div>
+      <div class="kpi-card"><div class="value" id="kpi-util">--</div><div class="label">로봇 가동률</div></div>
+      <div class="kpi-card"><div class="value" id="kpi-avg">--</div><div class="label">평균 작업 시간</div></div>
+      <div class="kpi-card" id="kpi-dl-card"><div class="value" id="kpi-dl">--</div><div class="label">교착 상태</div></div>
+      <div class="kpi-card"><div class="value" id="kpi-done">--</div><div class="label">완료 작업</div></div>
+      <div class="kpi-card"><div class="value" id="kpi-pending">--</div><div class="label">대기 작업</div></div>
     </div>
   </div>
+
+  <!-- 우측 하단: 알림 + 작업 큐 탭 -->
   <div class="panel">
-    <h2>Tasks Completed</h2>
-    <div class="chart-wrap"><canvas id="chartCanvas"></canvas></div>
-  </div>
-  <div class="panel">
-    <h2>Task Queue</h2>
-    <div class="task-table-wrap">
-      <table><thead><tr><th>Status</th><th>Task ID</th><th>Robot</th><th>From</th><th>To</th><th>Priority</th></tr></thead>
+    <div style="display:flex; gap:12px; margin-bottom:8px;">
+      <h2 id="tabAlert" style="cursor:pointer; opacity:1;" onclick="showTab('alert')">이상 알림</h2>
+      <h2 id="tabTask" style="cursor:pointer; opacity:0.4;" onclick="showTab('task')">작업 큐</h2>
+      <h2 id="tabChart" style="cursor:pointer; opacity:0.4;" onclick="showTab('chart')">처리 추이</h2>
+    </div>
+    <div id="alertPanel" class="alert-list"></div>
+    <div id="taskPanel" class="task-table-wrap" style="display:none;">
+      <table><thead><tr><th>상태</th><th>작업 ID</th><th>로봇</th><th>출발</th><th>도착</th><th>우선순위</th></tr></thead>
       <tbody id="taskBody"></tbody></table>
     </div>
+    <div id="chartPanel" class="chart-wrap" style="display:none;"><canvas id="chartCanvas"></canvas></div>
   </div>
 </div>
+
 <script>
 const mapCanvas = document.getElementById('mapCanvas');
 const chartCanvas = document.getElementById('chartCanvas');
 const mapCtx = mapCanvas.getContext('2d');
 const chartCtx = chartCanvas.getContext('2d');
 let chartData = [];
+let currentTab = 'alert';
+
+function showTab(tab) {
+  currentTab = tab;
+  document.getElementById('alertPanel').style.display = tab === 'alert' ? '' : 'none';
+  document.getElementById('taskPanel').style.display = tab === 'task' ? '' : 'none';
+  document.getElementById('chartPanel').style.display = tab === 'chart' ? '' : 'none';
+  document.getElementById('tabAlert').style.opacity = tab === 'alert' ? 1 : 0.4;
+  document.getElementById('tabTask').style.opacity = tab === 'task' ? 1 : 0.4;
+  document.getElementById('tabChart').style.opacity = tab === 'chart' ? 1 : 0.4;
+  if (tab === 'chart') resizeChart();
+}
+
+function resizeChart() {
+  chartCanvas.width = chartCanvas.clientWidth * devicePixelRatio;
+  chartCanvas.height = chartCanvas.clientHeight * devicePixelRatio;
+  chartCtx.scale(devicePixelRatio, devicePixelRatio);
+}
 
 function resize() {
-  [mapCanvas, chartCanvas].forEach(c => {
-    c.width = c.clientWidth * devicePixelRatio;
-    c.height = c.clientHeight * devicePixelRatio;
-    c.getContext('2d').scale(devicePixelRatio, devicePixelRatio);
-  });
+  mapCanvas.width = mapCanvas.clientWidth * devicePixelRatio;
+  mapCanvas.height = mapCanvas.clientHeight * devicePixelRatio;
+  mapCtx.scale(devicePixelRatio, devicePixelRatio);
+  if (currentTab === 'chart') resizeChart();
 }
 window.addEventListener('resize', resize);
 resize();
+
+const STATE_KR = { idle: '대기', navigating: '주행 중', docking: '도킹 중' };
+
+function updateRobotCards(robots) {
+  const container = document.getElementById('robotCards');
+  container.innerHTML = robots.map(r => {
+    const bat = r.battery.toFixed(0);
+    const batColor = bat > 50 ? '#44CC44' : bat > 20 ? '#FFCC00' : '#FF4444';
+    const stateKr = STATE_KR[r.state] || r.state;
+    const taskStr = r.current_task ? r.current_task : '--';
+    const speedStr = r.speed ? r.speed.toFixed(1) + ' m/s' : '0.0 m/s';
+    return `<div class="robot-card" style="border-left:3px solid ${r.color}">
+      <div class="name" style="color:${r.color}">${r.id.toUpperCase()}</div>
+      <div class="state ${r.state}">${stateKr}</div>
+      <div class="info">작업: ${taskStr}</div>
+      <div class="info">속도: ${speedStr}</div>
+      <div class="info">배터리: ${bat}%</div>
+      <div class="battery-bar"><div class="battery-fill" style="width:${bat}%; background:${batColor}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function updateAlerts(alerts, robots) {
+  const panel = document.getElementById('alertPanel');
+  let items = [];
+
+  // 시스템 알림 생성
+  const active = robots.filter(r => r.state !== 'idle').length;
+  if (active === robots.length) {
+    items.push({type:'info', msg:'모든 로봇 가동 중'});
+  }
+  robots.forEach(r => {
+    if (r.battery < 20) items.push({type:'warning', msg:`${r.id.toUpperCase()} 배터리 부족 (${r.battery.toFixed(0)}%)`});
+    if (r.battery < 10) items.push({type:'critical', msg:`${r.id.toUpperCase()} 배터리 위험 - 충전 필요`});
+    if (r.state === 'docking') items.push({type:'info', msg:`${r.id.toUpperCase()} 도킹 수행 중`});
+  });
+
+  if (items.length === 0) items.push({type:'info', msg:'이상 없음 - 시스템 정상 가동'});
+
+  const now = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  panel.innerHTML = items.map(a =>
+    `<div class="alert-item ${a.type}"><div class="alert-dot"></div><span>${now}</span> ${a.msg}</div>`
+  ).join('');
+}
 
 function drawMap(robots, mapData) {
   const ctx = mapCtx;
@@ -287,163 +450,145 @@ function drawMap(robots, mapData) {
   const sx = W / mapData.width, sy = H / mapData.height;
   ctx.clearRect(0, 0, W, H);
 
-  // 바닥
   ctx.fillStyle = '#1a1a2e';
   ctx.fillRect(0, 0, W, H);
 
   // 그리드
-  ctx.strokeStyle = '#252545';
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x < mapData.width; x += 5) {
-    ctx.beginPath(); ctx.moveTo(x*sx, 0); ctx.lineTo(x*sx, H); ctx.stroke();
-  }
-  for (let y = 0; y < mapData.height; y += 5) {
-    ctx.beginPath(); ctx.moveTo(0, y*sy); ctx.lineTo(W, y*sy); ctx.stroke();
-  }
+  ctx.strokeStyle = '#252545'; ctx.lineWidth = 0.5;
+  for (let x = 0; x < mapData.width; x += 5) { ctx.beginPath(); ctx.moveTo(x*sx,0); ctx.lineTo(x*sx,H); ctx.stroke(); }
+  for (let y = 0; y < mapData.height; y += 5) { ctx.beginPath(); ctx.moveTo(0,y*sy); ctx.lineTo(W,y*sy); ctx.stroke(); }
 
   // 선반
-  ctx.fillStyle = '#2d3a5c';
-  ctx.strokeStyle = '#4a5a8c';
-  ctx.lineWidth = 1;
+  ctx.fillStyle = '#2d3a5c'; ctx.strokeStyle = '#4a5a8c'; ctx.lineWidth = 1;
   (mapData.shelves || []).forEach(s => {
-    const rx = s.x * sx, ry = (mapData.height - s.y) * sy;
-    ctx.fillRect(rx - s.w*sx/2, ry - s.h*sy/2, s.w*sx, s.h*sy);
-    ctx.strokeRect(rx - s.w*sx/2, ry - s.h*sy/2, s.w*sx, s.h*sy);
-    ctx.fillStyle = '#5a6a9c'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(s.name, rx, ry + 3);
-    ctx.fillStyle = '#2d3a5c';
+    const rx = s.x*sx, ry = (mapData.height-s.y)*sy;
+    ctx.fillRect(rx-s.w*sx/2, ry-s.h*sy/2, s.w*sx, s.h*sy);
+    ctx.strokeRect(rx-s.w*sx/2, ry-s.h*sy/2, s.w*sx, s.h*sy);
+    ctx.fillStyle='#5a6a9c'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(s.name, rx, ry+3); ctx.fillStyle='#2d3a5c';
   });
 
   // 도크
-  (mapData.docks || []).forEach(d => {
-    const dx = d.x * sx, dy = (mapData.height - d.y) * sy;
-    ctx.fillStyle = '#0f3460'; ctx.fillRect(dx-12, dy-8, 24, 16);
-    ctx.fillStyle = '#4cc9f0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+  (mapData.docks||[]).forEach(d => {
+    const dx=d.x*sx, dy=(mapData.height-d.y)*sy;
+    ctx.fillStyle='#0f3460'; ctx.fillRect(dx-12,dy-8,24,16);
+    ctx.fillStyle='#4cc9f0'; ctx.font='9px sans-serif'; ctx.textAlign='center';
     ctx.fillText(d.name, dx, dy+3);
   });
+
+  // 충전소
+  if (mapData.charging) {
+    const cx=mapData.charging[0]*sx, cy=(mapData.height-mapData.charging[1])*sy;
+    ctx.fillStyle='#44CC44'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('⚡충전소', cx, cy+3);
+  }
 
   // 로봇 궤적 + 위치
   robots.forEach(r => {
     const trail = r.trail || [];
     if (trail.length > 1) {
-      ctx.strokeStyle = r.color + '44';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      trail.forEach((p, i) => {
-        const px = p[0]*sx, py = (mapData.height - p[1])*sy;
-        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-      });
+      ctx.strokeStyle = r.color+'44'; ctx.lineWidth = 2; ctx.beginPath();
+      trail.forEach((p,i) => { const px=p[0]*sx, py=(mapData.height-p[1])*sy; i===0?ctx.moveTo(px,py):ctx.lineTo(px,py); });
       ctx.stroke();
     }
 
-    const rx = r.position[0]*sx, ry = (mapData.height - r.position[1])*sy;
-    // 로봇 본체
-    ctx.fillStyle = r.color;
-    ctx.beginPath(); ctx.arc(rx, ry, 7, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+    // 목표 표시
+    if (r.target) {
+      const tx=r.target[0]*sx, ty=(mapData.height-r.target[1])*sy;
+      ctx.strokeStyle=r.color+'88'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(r.position[0]*sx,(mapData.height-r.position[1])*sy); ctx.lineTo(tx,ty); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle=r.color; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(tx,ty,5,0,Math.PI*2); ctx.stroke();
+    }
+
+    const rx=r.position[0]*sx, ry=(mapData.height-r.position[1])*sy;
+    ctx.fillStyle=r.color; ctx.beginPath(); ctx.arc(rx,ry,7,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 8px sans-serif'; ctx.textAlign='center';
     ctx.fillText(r.id.slice(-2), rx, ry+3);
-    // 방향
-    const angle = r.position[2] || 0;
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(rx, ry);
-    ctx.lineTo(rx + Math.cos(-angle)*12, ry + Math.sin(-angle)*12);
-    ctx.stroke();
+    const angle=r.position[2]||0;
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(rx,ry);
+    ctx.lineTo(rx+Math.cos(-angle)*12, ry+Math.sin(-angle)*12); ctx.stroke();
   });
 }
 
 function drawChart() {
   const ctx = chartCtx;
   const W = chartCanvas.clientWidth, H = chartCanvas.clientHeight;
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0,0,W,H);
   if (chartData.length < 2) return;
 
   const maxVal = Math.max(...chartData.map(d=>d.v), 1);
-  const padL = 40, padB = 24, padT = 10, padR = 10;
-  const cw = W - padL - padR, ch = H - padT - padB;
+  const padL=40, padB=24, padT=10, padR=10;
+  const cw=W-padL-padR, ch=H-padT-padB;
 
-  // 축
-  ctx.strokeStyle = '#3d3d5c'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H-padB); ctx.lineTo(W-padR, H-padB); ctx.stroke();
+  ctx.strokeStyle='#3d3d5c'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL,padT); ctx.lineTo(padL,H-padB); ctx.lineTo(W-padR,H-padB); ctx.stroke();
 
-  // 눈금
-  ctx.fillStyle = '#8d99ae'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
-  for (let i = 0; i <= 4; i++) {
-    const val = Math.round(maxVal * i / 4);
-    const y = H - padB - (ch * i / 4);
-    ctx.fillText(val, padL - 4, y + 3);
-    ctx.strokeStyle = '#252545';
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W-padR, y); ctx.stroke();
+  ctx.fillStyle='#8d99ae'; ctx.font='10px sans-serif'; ctx.textAlign='right';
+  for (let i=0;i<=4;i++) {
+    const val=Math.round(maxVal*i/4), y=H-padB-(ch*i/4);
+    ctx.fillText(val,padL-4,y+3);
+    ctx.strokeStyle='#252545'; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
   }
 
-  // 라인
-  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  chartData.forEach((d, i) => {
-    const x = padL + (i / (chartData.length-1)) * cw;
-    const y = H - padB - (d.v / maxVal) * ch;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
+  ctx.strokeStyle='#4cc9f0'; ctx.lineWidth=2; ctx.beginPath();
+  chartData.forEach((d,i) => { const x=padL+(i/(chartData.length-1))*cw, y=H-padB-(d.v/maxVal)*ch; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
   ctx.stroke();
 
-  // 영역 채우기
-  const grad = ctx.createLinearGradient(0, padT, 0, H-padB);
-  grad.addColorStop(0, 'rgba(76,201,240,0.3)');
-  grad.addColorStop(1, 'rgba(76,201,240,0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  chartData.forEach((d, i) => {
-    const x = padL + (i / (chartData.length-1)) * cw;
-    const y = H - padB - (d.v / maxVal) * ch;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.lineTo(padL + cw, H-padB);
-  ctx.lineTo(padL, H-padB);
-  ctx.closePath(); ctx.fill();
+  const grad=ctx.createLinearGradient(0,padT,0,H-padB);
+  grad.addColorStop(0,'rgba(76,201,240,0.3)'); grad.addColorStop(1,'rgba(76,201,240,0)');
+  ctx.fillStyle=grad; ctx.beginPath();
+  chartData.forEach((d,i) => { const x=padL+(i/(chartData.length-1))*cw, y=H-padB-(d.v/maxVal)*ch; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.lineTo(padL+cw,H-padB); ctx.lineTo(padL,H-padB); ctx.closePath(); ctx.fill();
 }
+
+const STATUS_KR = { completed:'완료', in_progress:'진행 중', pending:'대기' };
+const PRIO_KR = { high:'긴급', medium:'보통', low:'낮음' };
 
 function updateTasks(tasks) {
   const tbody = document.getElementById('taskBody');
   tbody.innerHTML = tasks.map(t => `<tr>
-    <td><span class="badge ${t.status}">${t.status.replace('_',' ')}</span></td>
+    <td><span class="badge ${t.status}">${STATUS_KR[t.status]||t.status}</span></td>
     <td>${t.id}</td>
-    <td>${t.assigned_robot || '-'}</td>
+    <td>${t.assigned_robot ? t.assigned_robot.toUpperCase() : '-'}</td>
     <td>${t.from}</td>
     <td>${t.to}</td>
-    <td><span class="badge ${t.priority}">${t.priority}</span></td>
+    <td><span class="badge ${t.priority}">${PRIO_KR[t.priority]||t.priority}</span></td>
   </tr>`).join('');
 }
 
 async function refresh() {
   try {
-    const [rRes, kRes, tRes, mRes] = await Promise.all([
-      fetch('/api/robots'), fetch('/api/kpi'),
-      fetch('/api/tasks'), fetch('/api/map')
+    const [rRes,kRes,tRes,mRes,aRes] = await Promise.all([
+      fetch('/api/robots'),fetch('/api/kpi'),fetch('/api/tasks'),fetch('/api/map'),fetch('/api/alerts')
     ]);
-    const robots = await rRes.json();
-    const kpi = await kRes.json();
-    const tasks = await tRes.json();
-    const mapData = await mRes.json();
+    const robots=await rRes.json(), kpi=await kRes.json(), tasks=await tRes.json(), mapData=await mRes.json(), alerts=await aRes.json();
 
+    updateRobotCards(robots);
     drawMap(robots, mapData);
     updateTasks(tasks);
+    updateAlerts(alerts, robots);
 
     document.getElementById('kpi-tph').textContent = kpi.tasks_per_hour;
     document.getElementById('kpi-util').textContent = kpi.utilization + '%';
-    document.getElementById('kpi-active').textContent = kpi.active_robots + '/' + kpi.total_robots;
+    document.getElementById('kpi-avg').textContent = kpi.avg_task_time;
     document.getElementById('kpi-dl').textContent = kpi.deadlocks;
     document.getElementById('kpi-dl-card').className = 'kpi-card' + (kpi.deadlocks > 0 ? ' alert' : '');
+    document.getElementById('kpi-done').textContent = kpi.completed_tasks;
+    document.getElementById('kpi-pending').textContent = kpi.pending_tasks;
 
     chartData.push({v: kpi.completed_tasks});
     if (chartData.length > 60) chartData.shift();
-    drawChart();
+    if (currentTab === 'chart') drawChart();
 
     document.getElementById('clock').textContent =
-      new Date().toLocaleTimeString('ko-KR') + ' | ' +
-      kpi.elapsed_minutes + 'min | ' + kpi.completed_tasks + ' tasks done';
+      new Date().toLocaleTimeString('ko-KR') + ' | 경과 ' +
+      kpi.elapsed_minutes + '분 | 완료 ' + kpi.completed_tasks + '건';
   } catch(e) { console.error(e); }
 }
 
-setInterval(refresh, 2000);
+setInterval(refresh, 750);
 refresh();
 </script>
 </body>
@@ -483,13 +628,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._respond_json(simulator.get_tasks())
         elif path == '/api/map':
             self._respond_json(simulator.get_map_data())
+        elif path == '/api/alerts':
+            self._respond_json(simulator.get_alerts())
         else:
             self.send_response(404)
             self.end_headers()
 
 
 def main():
-    port = 8080
+    port = 8888
     if '--port' in sys.argv:
         idx = sys.argv.index('--port')
         port = int(sys.argv[idx + 1])
